@@ -2,7 +2,8 @@ library(tidyverse)
 library(patchwork)
 
 #### Data files ----------------------------------------------------------------
-fiber_data <- read_rds(here::here('data/processed/fiber-data.rds'))
+fiber_data <- read_rds(here::here('data/processed/fiber-data.rds')) %>% 
+  mutate(fiber_type = factor(fiber_type, levels = c("Crocidolite", "Chrysotile")))
 concentrations <- read_rds(here::here('data/processed/concentrations.rds'))
 
 gm <- function(x) { exp(mean(log(x))) }
@@ -16,6 +17,7 @@ fiber_smry <- fiber_data %>%
             length = gm(length), 
             width = gm(width), 
             aspect_ratio = gm(aspect_ratio[!is.infinite(aspect_ratio)]), 
+            aed = gm(aed),
             debris = sum_na(debris)/n
             # debris = case_when(debris != 0 ~ debris), 
   ) %>% 
@@ -30,7 +32,7 @@ fiber_conc <- fiber_smry %>%
             width = mean(width), 
             aspect_ratio = mean(aspect_ratio),  
             fiber_cc = mean(fiber_cc),  
-            aed = (fiber_cc*log(2*aspect_ratio))^1/2 * width,
+            aed = mean(aed),
             total_fiber_cc = mean(total_fiber_cc)) 
 
 
@@ -115,9 +117,9 @@ fiber_conc %>% ungroup() %>% add_row(distance_ft = 0, degrees = 0, fiber_cc = 0,
   ggplot(aes(x = distance_ft, y = degrees, size = fiber_cc, shape = fiber_type)) + 
   coord_polar(theta = 'y', start = -1.57, direction = -1) + 
   geom_point(alpha = 0.8) + 
-  facet_wrap(~ fiber_type) + 
+  facet_wrap(~ factor(fiber_type, levels = c("Crocidolite", "Chrysotile"))) + 
   labs(x = 'Distance (ft)') +
-  scale_shape_manual(values = c(19, 1)) +
+  scale_shape_manual(values = c(1, 19)) +
   scale_size_continuous(range = c(1, 12)) + 
   scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) + 
   scale_y_continuous(limits = c(0, 360), breaks = seq(0, 360, by = 45)) + 
@@ -142,10 +144,10 @@ ggsave('output/deposition-cartesian.jpg', height = 5, width = 8, units = 'in')
 
 ## Fiber deposition rate
 ggplot(fiber_conc2, aes(x = norm_dist, y = norm_conc, shape = fiber_type, linetype = fiber_type)) + 
-  geom_point(size = 2.5) + 
+  geom_point(size = 2.5, alpha = 0.8) + 
   # facet_wrap(~ fiber_type) +
   stat_smooth(method = 'lm', formula = y ~ x - 1, se = F, color = 'black', size = 0.8) + 
-  labs(x = 'Distance from the 8 ft collector (ft)', y = 'Normalized concentration, log scale') +
+  labs(x = 'Distance from the "source zone"', y = 'Normalized concentration, log scale') +
   scale_x_continuous(limits = c(0, 100)) + 
   scale_y_log10() +
   scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
@@ -190,3 +192,32 @@ debris_conc2 %>%
   theme_bw() +
   theme(text = element_text(size = 12.5))
 ggsave('output/dist-traveled-by-fiber-type-and-debris.jpg', height = 4, width = 8, units = 'in')
+
+
+## Effect of fiber dimensions 
+f <- function(x) {
+  r <- quantile(x, probs = c(0.0, 0.25, 0.5, 0.75, 1.0))
+  names(r) <- c("ymin", "lower", "middle", "upper", "ymax")
+  r
+}
+p1 <- ggplot(fiber_data %>% filter(direction %in% plume_window), aes(x = factor(distance_ft), y = length)) + 
+  stat_summary(fun.data = f, geom = 'boxplot') +
+  stat_summary(fun = mean, geom = "point", size = 2, shape = 9) +
+  scale_y_log10() + 
+  annotation_logticks(sides = 'l') + 
+  labs(x = 'Distance (ft)', y = 'Length (um)') +
+  facet_wrap(~fiber_type) + 
+  theme_bw() + 
+  theme(text = element_text(size = 12.5))
+p2 <- ggplot(fiber_data %>% filter(direction %in% plume_window), aes(x = factor(distance_ft), y = width)) + 
+  stat_summary(fun.data = f, geom = 'boxplot') +
+  stat_summary(fun = mean, geom = "point", size = 2, shape = 9) +
+  scale_y_log10() + 
+  annotation_logticks(sides = 'l') + 
+  labs(x = 'Distance (ft)', y = 'Width (um)') +
+  facet_wrap(~fiber_type) + 
+  theme_bw() + 
+  theme(text = element_text(size = 12.5))
+
+p1 / p2 + plot_layout(guides = 'collect')
+ggsave('output/dimensions-at-distance.jpg', height = 8, width = 8, units = 'in')

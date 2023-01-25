@@ -26,10 +26,11 @@ fiber_data <- read_csv(here::here('data/Trial 1 All Fiber Data.csv'), col_types 
   mutate_at(vars(rjlg_sample_id, fiber_no, length, width, aspect_ratio, distance_ft), as.numeric) %>% 
   mutate(units = 'um', 
          field = as.numeric(str_replace(field, 'Field ', '')), 
-         fiber_type = ifelse(fiber_type == 'A', 'Amphibole', 'Chrysotile'), 
-         fiber_density = ifelse(fiber_type == 'Amphibole', 3.2, 2.4), 
-         # aed = sqrt(fiber_density*log(2*aspect_ratio))*width, # Henn (1996) 
+         fiber_type = ifelse(fiber_type == 'A', 'Crocidolite', 'Chrysotile'), 
+         fiber_density = ifelse(fiber_type == 'Crocidolite', 3.2, 2.4), 
+         aed_henn = sqrt(fiber_density*log(2*aspect_ratio))*width, # Henn (1996) 
          aed = 66*width*(aspect_ratio/(2 + 4*aspect_ratio))^2.2, # Timbrell (1965)
+         aed_hinds = width * fiber_density^0.5
          ) %>%
   filter(!is.na(length)) %>% 
   left_join(polar_coords(), by = 'direction') %>% 

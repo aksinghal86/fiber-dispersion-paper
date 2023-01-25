@@ -2,7 +2,7 @@
 title: "Fiber Dispersion Analysis"
 author: "Ankur Singhal"
 format: html
-editor: visual
+editor: source
 ---
 
 ```{r include=F}
@@ -21,11 +21,11 @@ debris <- read_rds(here::here('data/processed/debris-data.rds'))
 
 Physical characteristics are expected to be log-normally distributed (Lee 2020). Geometric mean (GM, $\mu m$) and geometric standard deviation (GSD) for the key parameters are provided in the table below.
 
-Aerodynamic equivalent diameter (AED) was calculated using the equation provided in Timbrell (1965): 
+Aerodynamic equivalent diameter (AED) was calculated using the equation provided in Timbrell (1965):
 
-$$ AED = 66 d_f (\frac {\beta} {2 + 4\beta})^{2.2} $$
+$$ AED = 66 d_f \left( \frac {\beta} {2 + 4\beta} \right)^{2.2} $$
 
-where $d_f$ is the fiber diameter and $\beta$ is the aspect ratio. 
+where $d_f$ is the fiber diameter and $\beta$ is the aspect ratio.
 
 ```{r}
 gm <- function(x) { exp(mean(log(x))) }
@@ -65,17 +65,17 @@ t.test(log(aspect_ratio) ~ fiber_type, fiber_data %>% filter(width>0));
 t.test(log(aed) ~ fiber_type, fiber_data)
 ```
 
-No correlation between length and width of amphibole fibers, but a weak correlation exists for chyrsotile fibers, i.e., longer chrysotile fibers also tend to be thicker. 
+No correlation between length and width of amphibole fibers, but a weak correlation exists for chyrsotile fibers, i.e., longer chrysotile fibers also tend to be thicker.
 
 ```{r correlation analysis}
-with(fiber_data %>% filter(fiber_type == 'Amphibole'), cor.test(log(length), log(width)))
-with(fiber_data %>% filter(fiber_type == 'Amphibole'), cor.test(log(length), log(width), method = 'spearman'))
+with(fiber_data %>% filter(fiber_type == 'Crocidolite'), cor.test(log(length), log(width)))
+with(fiber_data %>% filter(fiber_type == 'Crocidolite'), cor.test(log(length), log(width), method = 'spearman'))
 
 with(fiber_data %>% filter(fiber_type == 'Chrysotile', width>0), cor.test(log(length), log(width)))
 with(fiber_data %>% filter(fiber_type == 'Chrysotile', width>0), cor.test(log(length), log(width), method = 'spearman'))
 ```
 
-Amphibole fibers have a higher aerodynamic equivalent diameter (AED) compared to chrysotile fibers but a lower aspect ratio, which is consistent with amphibole fibers being wider and shorter compared to chrysotile fibers, which are longer and skinnier. 
+Amphibole fibers have a higher aerodynamic equivalent diameter (AED) compared to chrysotile fibers but a lower aspect ratio, which is consistent with amphibole fibers being wider and shorter compared to chrysotile fibers, which are longer and skinnier.
 
 ```{r warning=F}
 p1 <- ggplot(fiber_data, aes(x = aed, linetype = fiber_type)) + 
@@ -97,7 +97,8 @@ p2 <- ggplot(fiber_data, aes(x = aspect_ratio, linetype = fiber_type)) +
 
 p2 + p1 + plot_layout(guides = 'collect')
 ```
-Note that, though AED is influenced by both aspect ratio and diameter, diameter has a much bigger impact. AED is almost perfectly correlated with diameter of the fiber. 
+
+Note that, though AED is influenced by both aspect ratio and diameter, diameter has a much bigger impact. AED is almost perfectly correlated with diameter of the fiber.
 
 ```{r warning=F, message=F}
 ggplot(fiber_data, aes(x = length, y = aed)) + 
@@ -266,7 +267,7 @@ ggplot(fiber_conc2, aes(x = norm_dist, y = norm_conc, shape = fiber_type, linety
   theme(text = element_text(size = 12.5))
 ```
 
-Amphibole fibers have a deposition rate of 0.062 compared to a deposition rate of 0.043 for chrysotile fibers. 
+Amphibole fibers have a deposition rate of 0.062 compared to a deposition rate of 0.043 for chrysotile fibers.
 
 ```{r}
 a_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Amphibole'))
@@ -275,7 +276,7 @@ c_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type ==
 summary(a_mod); summary(c_mod)
 ```
 
-As AED goes down, fiber concentration goes down indicating that AED has an impact on distance traveled. 
+As AED goes down, fiber concentration goes down indicating that AED has an impact on distance traveled.
 
 ```{r message=F}
 fiber_conc2 %>% 
@@ -284,7 +285,7 @@ fiber_conc2 %>%
             fiber_cc = mean(fiber_cc))
 ```
 
-Nearly a perfect correlation in fact. The greater the AED the greater the concentrations. In other words, particles with greater AED travel less distance and therefore deposit out of air more quickly. This also means that fiber diameter has a greater impact on fiber transport than fiber length.  
+Nearly a perfect correlation in fact. The greater the AED the greater the concentrations. In other words, particles with greater AED travel less distance and therefore deposit out of air more quickly. This also means that fiber diameter has a greater impact on fiber transport than fiber length.
 
 ```{r}
 ggplot(fiber_conc2, aes(x = aed, y = fiber_cc)) + 
@@ -309,7 +310,6 @@ with(fiber_conc2 %>% filter(fiber_type == 'Amphibole'), cor.test(log(aed), log(f
 with(fiber_conc2 %>% filter(fiber_type == 'Chrysotile'), cor.test(log(aed), log(fiber_cc)))
 ```
 
-
 ```{r}
 ggplot(fiber_conc2, aes(x = length, y = fiber_cc)) + 
   geom_point(aes(shape = fiber_type)) + 
@@ -322,7 +322,6 @@ ggplot(fiber_conc2, aes(x = length, y = fiber_cc)) +
 
 ```
 
-
 ```{r}
 with(fiber_conc2 , cor.test(log(length), log(fiber_cc)))
 with(fiber_conc2 , cor.test(length, fiber_cc, method = 'spearman'))
@@ -330,7 +329,7 @@ with(fiber_conc2 , cor.test(length, fiber_cc, method = 'spearman'))
 
 ## Fiber binding to debris
 
-A much greater fraction of chrysotile fibers (~90%) are bound to debris compared to amphibole fibers (40 to 71%). Debris binding seems to have some effect on fiber transport characteristics, i.e., bound fibers travel further. This may be because bound fibers get more momentum from the cutting activity. But, is this effect significant and are the effects seen above simply due to fiber binding, i.e., do chrysotile fibers travel further because a higher fraction has debris bound to them? 
+A much greater fraction of chrysotile fibers (\~90%) are bound to debris compared to amphibole fibers (40 to 71%). Debris binding seems to have some effect on fiber transport characteristics, i.e., bound fibers travel further. This may be because bound fibers get more momentum from the cutting activity. But, is this effect significant and are the effects seen above simply due to fiber binding, i.e., do chrysotile fibers travel further because a higher fraction has debris bound to them?
 
 ```{r, message=F}
 debris_smry <- fiber_data %>% 
@@ -355,8 +354,6 @@ debris_conc <- fiber_data %>%
 debris_conc
 ```
 
-
-
 ```{r}
 debris_conc2 <- debris_conc %>% 
   filter(!is.na(debris), direction %in% plume_window) %>% 
@@ -370,8 +367,7 @@ debris_conc2 <- debris_conc %>%
 debris_conc2
 ```
 
-
-No difference in AED between bound or free fibers.   
+No difference in AED between bound or free fibers.
 
 ```{r, warning=F}
 ggplot(debris_smry, aes(x = aed, linetype = debris)) + 
@@ -385,7 +381,8 @@ ggplot(debris_smry, aes(x = aed, linetype = debris)) +
   theme(text = element_text(size = 12.5))
 
 ```
-Length, however, is an important predictor. 
+
+Length, however, is an important predictor.
 
 ```{r}
 ggplot(debris_smry, aes(x = length, linetype = debris)) +
@@ -434,4 +431,3 @@ debris_conc2 %>%
   theme_bw() +
   theme(text = element_text(size = 12.5))
 ```
-
