@@ -1,0 +1,437 @@
+---
+title: "Fiber Dispersion Analysis"
+author: "Ankur Singhal"
+format: html
+editor: visual
+---
+
+```{r include=F}
+knitr::opts_chunk$set(echo=F)
+```
+
+```{r message=F, warning=F}
+library(tidyverse)
+
+fiber_data <- read_rds(here::here('data/processed/fiber-data.rds'))
+concentrations <- read_rds(here::here('data/processed/concentrations.rds'))
+debris <- read_rds(here::here('data/processed/debris-data.rds'))
+```
+
+## Physical characteristics of fibers
+
+Physical characteristics are expected to be log-normally distributed (Lee 2020). Geometric mean (GM, $\mu m$) and geometric standard deviation (GSD) for the key parameters are provided in the table below.
+
+Aerodynamic equivalent diameter (AED) was calculated using the equation provided in Timbrell (1965): 
+
+$$ AED = 66 d_f (\frac {\beta} {2 + 4\beta})^{2.2} $$
+
+where $d_f$ is the fiber diameter and $\beta$ is the aspect ratio. 
+
+```{r}
+gm <- function(x) { exp(mean(log(x))) }
+gsd <- function(x) { exp(sd(log(x[x>0]))) }
+
+fiber_data %>% 
+  filter(width > 0) %>% 
+  group_by(fiber_type) %>% 
+  summarize(n = n(), 
+            l_gm = gm(length), 
+            l_gsd = gsd(length), 
+            w_gm = gm(width), 
+            w_gsd = gsd(width), 
+            ar_gm = gm(aspect_ratio),
+            ar_gsd = gsd(aspect_ratio), 
+            aed_gm = gm(aed), 
+            aed_gsd = gsd(aed))
+```
+
+Density plots for length, width and AED are shown below.
+
+```{r, warning=F}
+library(patchwork)
+p <- ggplot(fiber_data, aes(color = fiber_type)) 
+p1 <- p + geom_density(aes(x = log(length)))
+p2 <- p + geom_density(aes(x = log(width)))
+p3 <- p + geom_density(aes(x = log(aed)))
+p1+p2+p3 + plot_layout(guides = 'collect')
+```
+
+Welch's two sample t-test shows statistically significant differences by length, width, and AED.
+
+```{r}
+t.test(log(length) ~ fiber_type, fiber_data); 
+t.test(log(width) ~ fiber_type, fiber_data %>% filter(width>0)); 
+t.test(log(aspect_ratio) ~ fiber_type, fiber_data %>% filter(width>0)); 
+t.test(log(aed) ~ fiber_type, fiber_data)
+```
+
+No correlation between length and width of amphibole fibers, but a weak correlation exists for chyrsotile fibers, i.e., longer chrysotile fibers also tend to be thicker. 
+
+```{r correlation analysis}
+with(fiber_data %>% filter(fiber_type == 'Amphibole'), cor.test(log(length), log(width)))
+with(fiber_data %>% filter(fiber_type == 'Amphibole'), cor.test(log(length), log(width), method = 'spearman'))
+
+with(fiber_data %>% filter(fiber_type == 'Chrysotile', width>0), cor.test(log(length), log(width)))
+with(fiber_data %>% filter(fiber_type == 'Chrysotile', width>0), cor.test(log(length), log(width), method = 'spearman'))
+```
+
+Amphibole fibers have a higher aerodynamic equivalent diameter (AED) compared to chrysotile fibers but a lower aspect ratio, which is consistent with amphibole fibers being wider and shorter compared to chrysotile fibers, which are longer and skinnier. 
+
+```{r warning=F}
+p1 <- ggplot(fiber_data, aes(x = aed, linetype = fiber_type)) + 
+  stat_ecdf(size = 0.8) + 
+  scale_x_log10() +
+  annotation_logticks(sides = 'b') + 
+  labs(x = 'AED (um), log scale', y = 'Cumulative probability') + 
+  scale_linetype_discrete(name = 'Fiber Type') + 
+  theme_bw() + 
+  theme(text = element_text(size = 12.5))
+p2 <- ggplot(fiber_data, aes(x = aspect_ratio, linetype = fiber_type)) + 
+  stat_ecdf(size = 0.8) + 
+  scale_x_log10() +
+  annotation_logticks(sides = 'b') + 
+  labs(x = 'Aspect ratio, log scale', y = 'Cumulative probability') + 
+  scale_linetype_discrete(name = 'Fiber Type') + 
+  theme_bw() + 
+  theme(text = element_text(size = 12.5))
+
+p2 + p1 + plot_layout(guides = 'collect')
+```
+Note that, though AED is influenced by both aspect ratio and diameter, diameter has a much bigger impact. AED is almost perfectly correlated with diameter of the fiber. 
+
+```{r warning=F, message=F}
+ggplot(fiber_data, aes(x = length, y = aed)) + 
+  facet_wrap(~ fiber_type) +
+  geom_point(aes(shape = fiber_type), alpha = 0.5) + 
+  scale_x_log10() +
+  scale_y_log10() + 
+  annotation_logticks(sides = 'bl') +
+  stat_smooth(method = 'loess') + 
+  theme_bw() 
+
+ggplot(fiber_data, aes(x = width, y = aed)) + 
+  facet_wrap(~ fiber_type) +
+  geom_point(aes(shape = fiber_type), alpha = 0.5) + 
+  scale_x_log10() +
+  scale_y_log10() + 
+  annotation_logticks(sides = 'bl') +
+  stat_smooth(method = 'loess') + 
+  theme_bw() 
+```
+
+## Distribution of fibers
+
+In order to calculate fiber concentrations (fibers/cc \[f/cc\]), number of fibers per sampler need to be calculated using the following equation:
+
+$$C_{fiber} = \frac{\Sigma_{fiber}} {\Sigma_{asbestos}} C_{asbestos}$$
+
+-   $\Sigma_{fiber}$ is simply the sum of amphibole or chrysotile fibers per sampler
+-   $\Sigma_{asbestos}$ is the sum of amphibole and chrysotile fibers per sampler. This number was also provided by the lab and can be used as a verification.
+-   $C_{asbestos}$ are concentrations of total fibers \[f/cc\] provided by the lab.
+
+```{r message=F}
+sum_na <- function(v) { 
+  return(ifelse(all(is.na(v)), NA, sum(v, na.rm = T)))
+}
+fiber_smry <- fiber_data %>% 
+  group_by(chem_risk_id, distance_ft, fiber_type, direction, degrees, orientation) %>% 
+  summarize(n = n(),
+          length = gm(length), 
+          width = gm(width), 
+          aspect_ratio = gm(aspect_ratio[!is.infinite(aspect_ratio)]), 
+          debris = sum_na(debris)/n
+          # debris = case_when(debris != 0 ~ debris), 
+          ) %>% 
+  arrange(distance_ft, degrees)
+
+fiber_smry
+```
+
+[For two samplers `CH_1_AREA_30NE_V` and `CH_1_AREA_6N_V`, there is a discrepancy between the total number of calculated fibers vs the number reported by the lab. This should be verified with the lab.]{style="color: red;"}
+
+```{r}
+fiber_smry %>% 
+  group_by(chem_risk_id) %>% 
+  summarize(total_fibers_calc = sum(n)) %>% 
+  left_join(concentrations %>% select(chem_risk_id, total_fibers), by = 'chem_risk_id') %>% 
+  mutate(compare = total_fibers_calc == total_fibers) %>% 
+  filter(!compare)
+```
+
+At each location, there were vertical and horizontal samplers. No statistically significant differences were found between the two using t-test and therefore the two were averaged to have one concentration per sampling location.
+
+[Not sure if t-test is the correct way to test differences here given associations with fiber type and distance. Nevertheless, it is unlikely that there are any differences by orientation.]{style="color: red;"}
+
+```{r message=F}
+fiber_conc_incl_orient <- fiber_smry %>% 
+  ungroup() %>% 
+  left_join(concentrations, by = c('chem_risk_id', 'distance_ft', 'direction', 'degrees', 'orientation')) %>% 
+  mutate(fiber_cc = n/total_fibers*total_fiber_cc)
+
+t.test(fiber_cc ~ orientation, fiber_conc_incl_orient)
+```
+
+```{r message=F}
+# Arithmetic mean, not geometric mean b/c it's a mean of horizontal and vertical samples (only two values)
+fiber_conc <- fiber_smry %>% 
+  ungroup() %>% 
+  left_join(concentrations, by = c('chem_risk_id', 'distance_ft', 'direction', 'degrees', 'orientation')) %>% 
+  mutate(fiber_cc = n/total_fibers*total_fiber_cc) %>% 
+  ungroup() %>% 
+  group_by(distance_ft, fiber_type, direction, degrees) %>% 
+  summarize(length = mean(length), 
+            width = mean(width), 
+            aspect_ratio = mean(aspect_ratio),  
+            fiber_cc = mean(fiber_cc),  
+            aed = (fiber_cc*log(2*aspect_ratio))^1/2 * width,
+            total_fiber_cc = mean(total_fiber_cc)) 
+
+fiber_conc %>% 
+  group_by(distance_ft, degrees, fiber_type) %>% 
+  summarize(conc_gm = gm(fiber_cc)) %>% 
+  spread(fiber_type, conc_gm)
+```
+
+Fibers are mostly detected in the E, NE, SE direction, i.e., $\pm45^\circ$, of east ($0^\circ$). Outside of this window, fiber concentrations are negligible or zero.
+
+However, concentrations are significant at 8 ft in all directions though they are highest in the east direction and lowest directly opposite in the west direction.
+
+To account for the two observations above, remaining analyses are conducted using the following:
+
+1)  Only concentrations in the plume window (E, NE, and SE) used. This removes bias from low to negligible concentrations.
+2)  All concentrations normalized to the 8 ft E sample. This is the only 8 ft sample in the plume window.
+
+```{r}
+fiber_conc %>% ungroup() %>% add_row(distance_ft = 0, degrees = 0, fiber_cc = 0, fiber_type ='Chrysotile') %>% 
+  ggplot(aes(x = distance_ft, y = degrees, size = fiber_cc, shape = fiber_type)) + 
+  coord_polar(theta = 'y', start = -1.57, direction = -1) + 
+  geom_point(alpha = 0.8) + 
+  facet_wrap(~ fiber_type) + 
+  labs(x = 'Distance (ft)') +
+  scale_shape_manual(values = c(19, 1)) +
+  scale_size_continuous(range = c(1, 12)) + 
+  scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) + 
+  scale_y_continuous(limits = c(0, 360), breaks = seq(0, 360, by = 45)) + 
+  theme_bw() + 
+  theme(legend.position = "none",
+        text = element_text(size = 12), 
+        axis.title.x = element_blank())
+```
+
+```{r}
+ggplot(fiber_conc, aes(x = distance_ft, y = fiber_cc, shape = fiber_type, linetype = fiber_type)) + 
+  facet_wrap(~ reorder(direction, degrees)) + 
+  geom_point(size = 2.5) + 
+  geom_line(size = 0.6) + 
+  scale_shape_manual(values = c(19, 1)) + 
+  labs(x = 'Distance (ft)', y = 'Concentrations (f/cc)') + 
+  theme_bw() +    
+  theme(legend.title = element_blank(), 
+        text = element_text(size = 12.5))
+```
+
+## Fiber deposition rates
+
+```{r}
+# Filter samples in the plume window and normalize concentrations to the 8 ft sampler
+# Also, distances are net distance from the 8 ft sampler
+plume_window <- c("E", "NE", "SE")
+fiber_smry2 <- fiber_smry %>% filter(direction %in% plume_window)
+fiber_conc2 <- fiber_conc %>% 
+  filter(direction %in% plume_window) %>% 
+  mutate(xx = fiber_cc*case_when(distance_ft == 8 ~ 1)) %>% 
+  group_by(fiber_type) %>% 
+  fill(xx, .direction = 'down') %>% 
+  mutate(norm_conc = fiber_cc/xx, 
+         norm_dist = distance_ft - 8) %>% 
+  select(-xx)
+
+fiber_conc2
+```
+
+Amphibole fibers are deposited faster than chrysotile fibers.
+
+```{r}
+ggplot(fiber_conc2, aes(x = norm_dist, y = norm_conc, shape = fiber_type, linetype = fiber_type)) + 
+  geom_point(size = 2.5) + 
+  # facet_wrap(~ fiber_type) +
+  stat_smooth(method = 'lm', formula = y ~ x - 1, se = F, color = 'black', size = 0.8) + 
+  labs(x = 'Distance from the 8 ft collector (ft)', y = 'Normalized concentration, log scale') +
+  scale_x_continuous(limits = c(0, 100)) + 
+  scale_y_log10() +
+  scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
+  scale_linetype_discrete(name = 'Fiber type') + 
+  annotation_logticks(sides = 'l') +
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
+```
+
+Amphibole fibers have a deposition rate of 0.062 compared to a deposition rate of 0.043 for chrysotile fibers. 
+
+```{r}
+a_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Amphibole'))
+c_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
+
+summary(a_mod); summary(c_mod)
+```
+
+As AED goes down, fiber concentration goes down indicating that AED has an impact on distance traveled. 
+
+```{r message=F}
+fiber_conc2 %>% 
+  group_by(distance_ft, fiber_type) %>% 
+  summarize(aed = mean(aed),
+            fiber_cc = mean(fiber_cc))
+```
+
+Nearly a perfect correlation in fact. The greater the AED the greater the concentrations. In other words, particles with greater AED travel less distance and therefore deposit out of air more quickly. This also means that fiber diameter has a greater impact on fiber transport than fiber length.  
+
+```{r}
+ggplot(fiber_conc2, aes(x = aed, y = fiber_cc)) + 
+  geom_point(aes(shape = fiber_type)) + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  annotation_logticks(sides = 'bl') + 
+  theme_bw() 
+ggplot(fiber_conc2, aes(x = distance_ft, y = aed)) + 
+  geom_point(aes(shape = fiber_type)) + 
+  # scale_x_log10() + 
+  scale_y_log10() + 
+  annotation_logticks(sides = 'l') + 
+  theme_bw() 
+
+
+```
+
+```{r}
+with(fiber_conc2, cor.test(log(aed), log(fiber_cc)))
+with(fiber_conc2 %>% filter(fiber_type == 'Amphibole'), cor.test(log(aed), log(fiber_cc)))
+with(fiber_conc2 %>% filter(fiber_type == 'Chrysotile'), cor.test(log(aed), log(fiber_cc)))
+```
+
+
+```{r}
+ggplot(fiber_conc2, aes(x = length, y = fiber_cc)) + 
+  geom_point(aes(shape = fiber_type)) + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  annotation_logticks(sides = 'bl') +
+  stat_smooth(method = 'lm', color = 'black', se = F) + 
+  theme_bw() 
+
+
+```
+
+
+```{r}
+with(fiber_conc2 , cor.test(log(length), log(fiber_cc)))
+with(fiber_conc2 , cor.test(length, fiber_cc, method = 'spearman'))
+```
+
+## Fiber binding to debris
+
+A much greater fraction of chrysotile fibers (~90%) are bound to debris compared to amphibole fibers (40 to 71%). Debris binding seems to have some effect on fiber transport characteristics, i.e., bound fibers travel further. This may be because bound fibers get more momentum from the cutting activity. But, is this effect significant and are the effects seen above simply due to fiber binding, i.e., do chrysotile fibers travel further because a higher fraction has debris bound to them? 
+
+```{r, message=F}
+debris_smry <- fiber_data %>% 
+  filter(!is.na(debris))
+debris_smry %>% 
+  filter(direction %in% plume_window) %>% 
+  group_by(distance_ft, fiber_type) %>% 
+  summarize(n = n(), bound = sum(debris), fraction = bound/n)
+```
+
+```{r}
+debris_conc <- fiber_data %>% 
+  # filter(!is.na(debris)) %>% 
+  group_by(chem_risk_id, distance_ft, fiber_type, direction, degrees, orientation, debris) %>% 
+  summarize(n = n(),
+            length = gm(length), 
+            width = gm(width), 
+            aspect_ratio = gm(aspect_ratio)) %>% 
+  arrange(distance_ft, degrees) %>% 
+  left_join(concentrations, by = c('chem_risk_id', 'distance_ft', 'direction', 'degrees', 'orientation')) %>% 
+  mutate(fiber_cc = n/total_fibers*total_fiber_cc) 
+debris_conc
+```
+
+
+
+```{r}
+debris_conc2 <- debris_conc %>% 
+  filter(!is.na(debris), direction %in% plume_window) %>% 
+  mutate(xx = fiber_cc*case_when(distance_ft == 8 ~ 1)) %>% 
+  ungroup() %>% 
+  group_by(fiber_type, debris) %>% 
+  fill(xx, .direction = 'down') %>% 
+  mutate(norm_conc = fiber_cc/xx, 
+         norm_dist = distance_ft - 8) %>% 
+  select(-xx)
+debris_conc2
+```
+
+
+No difference in AED between bound or free fibers.   
+
+```{r, warning=F}
+ggplot(debris_smry, aes(x = aed, linetype = debris)) + 
+  facet_wrap(~fiber_type) + 
+  stat_ecdf(size = 0.8) + 
+  scale_x_log10() +
+  annotation_logticks(sides = 'b') + 
+  labs(x = 'AED (um)', y = 'Cumulative probability') + 
+  scale_linetype_discrete(name = 'Fiber bound\nto debris') +
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
+
+```
+Length, however, is an important predictor. 
+
+```{r}
+ggplot(debris_smry, aes(x = length, linetype = debris)) +
+  facet_wrap(~fiber_type) + 
+  stat_ecdf(size = 0.8) +
+  scale_x_log10() +
+  annotation_logticks(sides = 'b') +
+  labs(x = 'Length (um)', y = 'Cumulative probability') +
+  scale_linetype_discrete(name = 'Fiber bound\nto debris') +
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
+
+```
+
+```{r}
+ggplot(debris_conc2, aes(x = norm_dist, y = norm_conc, color = debris, shape = fiber_type)) + 
+  facet_wrap(~ fiber_type) +
+  geom_point() +
+  geom_line() +
+  scale_y_log10()
+```
+
+```{r warning=F, message=F}
+debris_conc2 %>% 
+  group_by(fiber_type, debris) %>% 
+  summarize(wt_dist = sum(fiber_cc*distance_ft)/sum(fiber_cc)) %>% 
+  ggplot(aes(x = fiber_type, y = wt_dist, fill = debris)) + 
+  geom_bar(stat = 'identity', position = 'dodge') + 
+  geom_text(aes(label = round(wt_dist, 1)), vjust = -0.4, position = position_dodge(0.9)) +
+  labs(x = 'Fiber type', y = 'Distance (ft)') + 
+  scale_fill_grey(name = 'Fiber bound\nto debris') + 
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
+```
+
+```{r, message=F}
+debris_conc2 %>% 
+  filter(distance_ft>8) %>% 
+  group_by(fiber_type, debris) %>% 
+  summarize(wt_dist = sum(fiber_cc*distance_ft)/sum(fiber_cc)) %>% 
+  ggplot(aes(x = fiber_type, y = wt_dist, fill = debris)) + 
+  geom_bar(stat = 'identity', position = 'dodge') + 
+  geom_text(aes(label = round(wt_dist, 1)), vjust = -0.4, position = position_dodge(0.9)) +
+  labs(x = 'Fiber type', y = 'Distance (ft)') + 
+  scale_fill_grey(name = 'Fiber bound\nto debris') + 
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
+```
+
