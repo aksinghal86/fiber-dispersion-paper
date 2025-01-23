@@ -270,7 +270,7 @@ ggplot(fiber_conc2, aes(x = norm_dist, y = norm_conc, shape = fiber_type, linety
 Amphibole fibers have a deposition rate of 0.062 compared to a deposition rate of 0.043 for chrysotile fibers.
 
 ```{r}
-a_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Amphibole'))
+a_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Crocidolite'))
 c_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
 
 summary(a_mod); summary(c_mod)
@@ -306,7 +306,7 @@ ggplot(fiber_conc2, aes(x = distance_ft, y = aed)) +
 
 ```{r}
 with(fiber_conc2, cor.test(log(aed), log(fiber_cc)))
-with(fiber_conc2 %>% filter(fiber_type == 'Amphibole'), cor.test(log(aed), log(fiber_cc)))
+with(fiber_conc2 %>% filter(fiber_type == 'Crocidolite'), cor.test(log(aed), log(fiber_cc)))
 with(fiber_conc2 %>% filter(fiber_type == 'Chrysotile'), cor.test(log(aed), log(fiber_cc)))
 ```
 
