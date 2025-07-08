@@ -96,6 +96,7 @@ p2 <- ggplot(fiber_data, aes(x = aspect_ratio, linetype = fiber_type)) +
   theme(text = element_text(size = 12.5))
 
 p2 + p1 + plot_layout(guides = 'collect')
+ggsave(here::here('output/aspect-ratio-and-aed.jpg'))
 ```
 
 Note that, though AED is influenced by both aspect ratio and diameter, diameter has a much bigger impact. AED is almost perfectly correlated with diameter of the fiber.
@@ -177,7 +178,7 @@ t.test(fiber_cc ~ orientation, fiber_conc_incl_orient)
 fiber_conc <- fiber_smry %>% 
   ungroup() %>% 
   left_join(concentrations, by = c('chem_risk_id', 'distance_ft', 'direction', 'degrees', 'orientation')) %>% 
-  mutate(fiber_cc = n/total_fibers*total_fiber_cc) %>% 
+  mutate(fiber_cc = (n/total_fibers) * total_fiber_cc) %>% 
   ungroup() %>% 
   group_by(distance_ft, fiber_type, direction, degrees) %>% 
   summarize(length = mean(length), 
@@ -201,6 +202,15 @@ To account for the two observations above, remaining analyses are conducted usin
 
 1)  Only concentrations in the plume window (E, NE, and SE) used. This removes bias from low to negligible concentrations.
 2)  All concentrations normalized to the 8 ft E sample. This is the only 8 ft sample in the plume window.
+```{r}
+ggplot(fiber_conc |> filter(distance_ft == 8) |> mutate(direction = factor(direction, c("E", "N", "W", "S"))), 
+       aes(x = direction, y = fiber_cc, fill = fiber_type)) + 
+  geom_col(position = 'stack') + 
+  theme_bw() + 
+  scale_fill_grey(name = 'Fiber Type') + 
+  labs(y = 'Fiber concentration (f/cc)', x = 'Direction', title = 'Chrysotile and Crocidolite Fiber Concentration at 8 ft') 
+ggsave(here::here('output/chrys-croc-fiber-conc-8-ft.jpg'))
+```
 
 ```{r}
 fiber_conc %>% ungroup() %>% add_row(distance_ft = 0, degrees = 0, fiber_cc = 0, fiber_type ='Chrysotile') %>% 
@@ -217,18 +227,21 @@ fiber_conc %>% ungroup() %>% add_row(distance_ft = 0, degrees = 0, fiber_cc = 0,
   theme(legend.position = "none",
         text = element_text(size = 12), 
         axis.title.x = element_blank())
+ggsave(here::here('output/fiber-transport-polar.jpg'))
 ```
 
 ```{r}
 ggplot(fiber_conc, aes(x = distance_ft, y = fiber_cc, shape = fiber_type, linetype = fiber_type)) + 
   facet_wrap(~ reorder(direction, degrees)) + 
-  geom_point(size = 2.5) + 
-  geom_line(size = 0.6) + 
+  geom_point(aes(size = fiber_cc)) + 
+  geom_line(size = 1) + 
   scale_shape_manual(values = c(19, 1)) + 
   labs(x = 'Distance (ft)', y = 'Concentrations (f/cc)') + 
   theme_bw() +    
+  scale_size_continuous(guide = 'none') + 
   theme(legend.title = element_blank(), 
         text = element_text(size = 12.5))
+ggsave(here::here('output/deposition-cartesian.jpg'))
 ```
 
 ## Fiber deposition rates
@@ -253,11 +266,11 @@ fiber_conc2
 Amphibole fibers are deposited faster than chrysotile fibers.
 
 ```{r}
-ggplot(fiber_conc2, aes(x = norm_dist, y = norm_conc, shape = fiber_type, linetype = fiber_type)) + 
+ggplot(fiber_conc2, aes(x = distance_ft, y = fiber_cc, shape = fiber_type, linetype = fiber_type)) + 
   geom_point(size = 2.5) + 
   # facet_wrap(~ fiber_type) +
-  stat_smooth(method = 'lm', formula = y ~ x - 1, se = F, color = 'black', size = 0.8) + 
-  labs(x = 'Distance from the 8 ft collector (ft)', y = 'Normalized concentration, log scale') +
+  stat_smooth(method = 'lm', se = F, color = 'black', size = 0.8) +
+  labs(x = 'Distance (ft)', y = 'Fiber concentration (f/cc), log scale') +
   scale_x_continuous(limits = c(0, 100)) + 
   scale_y_log10() +
   scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
@@ -265,15 +278,17 @@ ggplot(fiber_conc2, aes(x = norm_dist, y = norm_conc, shape = fiber_type, linety
   annotation_logticks(sides = 'l') +
   theme_bw() +
   theme(text = element_text(size = 12.5))
+ggsave(here::here('output/deposition-rate-fit.jpg'))
 ```
 
 Amphibole fibers have a deposition rate of 0.062 compared to a deposition rate of 0.043 for chrysotile fibers.
 
 ```{r}
-a_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Crocidolite'))
-c_mod <- lm(log(norm_conc) ~ norm_dist - 1, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
-
-summary(a_mod); summary(c_mod)
+# croc_mod <- lm(log(norm_conc) ~ norm_dist, fiber_conc2 %>% filter(fiber_type == 'Crocidolite'))
+# chrys_mod <- lm(log(norm_conc) ~ norm_dist, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
+croc_mod <- lm(log(fiber_cc) ~ distance_ft, fiber_conc2 %>% filter(fiber_type == 'Crocidolite'))
+chrys_mod <- lm(log(fiber_cc) ~ distance_ft, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
+summary(croc_mod); summary(chrys_mod)
 ```
 
 As AED goes down, fiber concentration goes down indicating that AED has an impact on distance traveled.
@@ -288,71 +303,251 @@ fiber_conc2 %>%
 Nearly a perfect correlation in fact. The greater the AED the greater the concentrations. In other words, particles with greater AED travel less distance and therefore deposit out of air more quickly. This also means that fiber diameter has a greater impact on fiber transport than fiber length.
 
 ```{r}
-ggplot(fiber_conc2, aes(x = aed, y = fiber_cc)) + 
-  geom_point(aes(shape = fiber_type)) + 
-  scale_x_log10() + 
-  scale_y_log10() + 
-  annotation_logticks(sides = 'bl') + 
-  theme_bw() 
-ggplot(fiber_conc2, aes(x = distance_ft, y = aed)) + 
-  geom_point(aes(shape = fiber_type)) + 
-  # scale_x_log10() + 
-  scale_y_log10() + 
-  annotation_logticks(sides = 'l') + 
-  theme_bw() 
+p1 = ggplot(fiber_conc2, aes(x = distance_ft, y = aed, shape = fiber_type, linetype = fiber_type)) + 
+  geom_point(size = 2.5) + 
+  stat_smooth(method = 'lm', se = F, color = 'black', size = 0.8) +
+  scale_y_log10() +
+  labs(x = 'Distance (ft)', y = 'AED (um), log scale') +
+  annotation_logticks(sides = 'l') +
+  scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
+  scale_linetype_discrete(name = 'Fiber type') + 
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
 
 
-```
+p2 = ggplot(fiber_conc2, aes(x = distance_ft, y = length, shape = fiber_type, linetype = fiber_type)) +   
+  geom_point(size = 2.5) + 
+  stat_smooth(method = 'lm', se = F, color = 'black', size = 0.8) +
+  scale_y_log10() +
+  labs(x = 'Distance (ft)', y = 'Length (um), log scale') +
+  annotation_logticks(sides = 'l') +
+  scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
+  scale_linetype_discrete(name = 'Fiber type') + 
+  theme_bw() +
+  theme(text = element_text(size = 12.5))
 
-```{r}
-with(fiber_conc2, cor.test(log(aed), log(fiber_cc)))
-with(fiber_conc2 %>% filter(fiber_type == 'Crocidolite'), cor.test(log(aed), log(fiber_cc)))
-with(fiber_conc2 %>% filter(fiber_type == 'Chrysotile'), cor.test(log(aed), log(fiber_cc)))
-```
-
-```{r}
-ggplot(fiber_conc2, aes(x = length, y = fiber_cc)) + 
-  geom_point(aes(shape = fiber_type)) + 
-  scale_x_log10() + 
-  scale_y_log10() + 
-  annotation_logticks(sides = 'bl') +
-  stat_smooth(method = 'lm', color = 'black', se = F) + 
-  theme_bw() 
-
+p1 + p2 + plot_layout(guides = 'collect')
+ggsave(here::here('output/aed-vs-distance and length-vs-distance.jpg'))
 
 ```
 
 ```{r}
-with(fiber_conc2 , cor.test(log(length), log(fiber_cc)))
-with(fiber_conc2 , cor.test(length, fiber_cc, method = 'spearman'))
+with(fiber_conc2, cor.test(log(aed), distance_ft))
+with(fiber_conc2 %>% filter(fiber_type == 'Crocidolite'), cor.test(log(aed), distance_ft))
+with(fiber_conc2 %>% filter(fiber_type == 'Chrysotile'), cor.test(log(aed), distance_ft))
 ```
+
+```{r}
+with(fiber_conc2, cor.test(log(length), distance_ft))
+with(fiber_conc2 %>% filter(fiber_type == 'Crocidolite'), cor.test(log(length), distance_ft))
+with(fiber_conc2 %>% filter(fiber_type == 'Chrysotile'), cor.test(log(length), distance_ft))
+
+```
+
 
 ## Fiber binding to debris
 
 A much greater fraction of chrysotile fibers (\~90%) are bound to debris compared to amphibole fibers (40 to 71%). Debris binding seems to have some effect on fiber transport characteristics, i.e., bound fibers travel further. This may be because bound fibers get more momentum from the cutting activity. But, is this effect significant and are the effects seen above simply due to fiber binding, i.e., do chrysotile fibers travel further because a higher fraction has debris bound to them?
 
 ```{r, message=F}
-debris_smry <- fiber_data %>% 
+debris_smry <- debris %>% 
   filter(!is.na(debris))
+debris_smry |> 
+  filter(direction %in% plume_window) |> 
+  group_by(fiber_type) |>  
+  summarize(n = n(), bound = sum(debris), fraction = bound/n) |> 
+  janitor::adorn_totals()
+```
+```{r}
 debris_smry %>% 
   filter(direction %in% plume_window) %>% 
   group_by(distance_ft, fiber_type) %>% 
   summarize(n = n(), bound = sum(debris), fraction = bound/n)
 ```
 
+
+
 ```{r}
-debris_conc <- fiber_data %>% 
-  # filter(!is.na(debris)) %>% 
+debris_conc <- debris_smry %>% 
+  filter(!is.na(debris), width!=0) %>%
   group_by(chem_risk_id, distance_ft, fiber_type, direction, degrees, orientation, debris) %>% 
   summarize(n = n(),
             length = gm(length), 
             width = gm(width), 
-            aspect_ratio = gm(aspect_ratio)) %>% 
+            aspect_ratio = gm(aspect_ratio)
+            ) %>% 
   arrange(distance_ft, degrees) %>% 
   left_join(concentrations, by = c('chem_risk_id', 'distance_ft', 'direction', 'degrees', 'orientation')) %>% 
   mutate(fiber_cc = n/total_fibers*total_fiber_cc) 
 debris_conc
 ```
+
+```{r}
+debris_conc2 <- debris_conc |> 
+  filter(direction %in% plume_window) 
+
+debris_conc2 |> 
+  mutate(debris = factor(debris, levels = c(TRUE, FALSE))) |>  # Flip factor order
+  ggplot(aes(x = distance_ft, y = fiber_cc, shape = debris, linetype = debris)) + 
+  facet_wrap(~fiber_type) + 
+  geom_point(size = 2.5) +
+  scale_y_log10() + 
+  annotation_logticks(sides = 'l') + 
+  stat_smooth(method = 'lm', se = FALSE, color = 'black', size = 0.8) +
+  theme_bw() +
+  labs(x = "Distance (ft)", y = "Fiber concentration (f/cc), log scale") +
+  scale_shape_manual(name = 'Bound debris', values = c(`TRUE` = 17, `FALSE` = 5)) +
+  scale_linetype_manual(name = 'Bound debris', values = c(`TRUE` = "solid", `FALSE` = "dashed")) +
+  theme(text = element_text(size = 12.5))
+ggsave(here::here('output/deposition-rates-by-debris-binding.jpg'))
+```
+
+```{r}
+debris_mod <- lm(log(fiber_cc) ~ distance_ft + debris + fiber_type, data = debris_conc2)
+summary(debris_mod)
+```
+```{r}
+debris_interaction_mod <- lm(log(fiber_cc) ~ distance_ft * debris * fiber_type, data = debris_conc2)
+summary(debris_interaction_mod)
+```
+
+```{r}
+summary(lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(fiber_type == 'Chrysotile', debris)))
+summary(lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(fiber_type == 'Chrysotile', !debris)))
+summary(lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(fiber_type == 'Crocidolite', debris)))
+summary(lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(fiber_type == 'Crocidolite', !debris)))
+```
+
+
+```{r}
+
+p1 <- debris_conc2 |> 
+  filter(width != 0) |> 
+  mutate(aed = 66 * width * (aspect_ratio / (2 + 4 * aspect_ratio))^2.2) |> 
+  ggplot(aes(x = fiber_type, y = aed, shape = debris)) +
+  geom_boxplot() +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), size = 2.5, alpha = 0.5) +
+  theme_bw() +
+  labs(x = "Fiber type", y = "AED (um)") +
+  scale_shape_manual(name = 'Bound debris', values = c(`TRUE` = 17, `FALSE` = 5)) +
+  theme(text = element_text(size = 12.5))
+
+p2 <- debris_conc2 |>
+  ggplot(aes(x = fiber_type, y = length, shape = debris)) + 
+  geom_boxplot() + 
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75), 
+              size = 2.5, alpha = 0.5) +
+  theme_bw()+
+  labs(x = "Fiber type", y = "Length (um)") +
+  scale_shape_manual(name = 'Bound debris', values = c(`TRUE` = 17, `FALSE` = 5)) +
+  theme(text = element_text(size = 12.5))
+
+p1 + p2 + plot_layout(guides = 'collect')
+ggsave(here::here('output/aed-length-by-bound-debris.jpg'))
+```
+```{r}
+debris_clean <- debris_conc |> 
+  filter(direction %in% plume_window, width != 0) |> 
+  mutate(aed = 66 * width * (aspect_ratio / (2 + 4 * aspect_ratio))^2.2)
+
+# Wilcoxon test within each fiber type
+debris_clean |> 
+  group_by(fiber_type) |> 
+  summarize(
+    p_wilcox_aed = wilcox.test(aed ~ debris)$p.value,
+    p_wilcox_length = wilcox.test(length ~ debris)$p.value,
+    .groups = "drop"
+  )
+
+# Optional: Linear model
+summary(lm(aed ~ debris * fiber_type, data = debris_clean));
+summary(lm(length ~ debris * fiber_type, data = debris_clean))
+```
+
+
+
+```{r}
+
+# Filter for Chrysotile observations
+chry <- fiber_conc2 %>% filter(fiber_type == "Chrysotile")
+
+# Distance range
+x_vals <- chry$distance_ft
+x_range <- seq(min(x_vals), max(x_vals), length.out = 100)
+
+# Initial concentration
+C0 <- chry$fiber_cc[which.min(chry$distance_ft)]
+
+# Exponential decay model
+exp_df <- data.frame(
+  distance_ft = x_range,
+  fiber_cc = C0 * exp(-0.044 * (x_range - min(x_vals))),
+  model = "Exponential Decay"
+)
+
+# Gaussian models
+sigmas <- c(5, 10, 15, 20)
+gauss_df <- do.call(rbind, lapply(sigmas, function(sigma) {
+  data.frame(
+    distance_ft = x_range,
+    fiber_cc = C0 * exp(-((x_range - min(x_vals)) / sigma)^2 / 2),
+    model = paste0("Gaussian σ=", sigma)
+  )
+}))
+
+# Combine
+model_df <- bind_rows(exp_df, gauss_df)
+
+# Grayscale style
+grayscale_palette <- c(
+  "Exponential Decay" = "black",
+  "Gaussian σ=5" = "gray20",
+  "Gaussian σ=10" = "gray40",
+  "Gaussian σ=15" = "gray60",
+  "Gaussian σ=20" = "gray80"
+)
+
+linetypes <- c(
+  "Exponential Decay" = "solid",
+  "Gaussian σ=5" = "dashed",
+  "Gaussian σ=10" = "dotted",
+  "Gaussian σ=15" = "dotdash",
+  "Gaussian σ=20" = "longdash"
+)
+
+model_df$model <- factor(model_df$model, levels = c(
+  "Exponential Decay",
+  "Gaussian σ=5",
+  "Gaussian σ=10",
+  "Gaussian σ=15",
+  "Gaussian σ=20"
+  
+))
+# Plot
+ggplot() +
+  geom_point(data = chry, aes(x = distance_ft, y = fiber_cc), shape = 19,  color = "black", size = 2.5) +
+  geom_line(data = model_df, aes(x = distance_ft, y = fiber_cc, color = model, linetype = model), size = 1) +
+  scale_color_manual(values = grayscale_palette) +
+  scale_linetype_manual(values = linetypes) +
+  labs(
+    title = "Observed vs. Modeled Chrysotile Dispersion",
+    x = "Distance (ft)",
+    y = "Fiber Concentration (f/cc)",
+    color = "Model",
+    linetype = "Model"
+  ) +
+  theme_minimal()
+
+ggsave(here::here('output/comparison-to-gaussian-models.jpg'))
+```
+
+
+
+
+
+
+
+
 
 ```{r}
 debris_conc2 <- debris_conc %>% 
@@ -401,7 +596,7 @@ ggplot(debris_smry, aes(x = length, linetype = debris)) +
 ggplot(debris_conc2, aes(x = norm_dist, y = norm_conc, color = debris, shape = fiber_type)) + 
   facet_wrap(~ fiber_type) +
   geom_point() +
-  geom_line() +
+  stat_smooth(method = 'loess', se = F) + 
   scale_y_log10()
 ```
 
