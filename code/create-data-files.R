@@ -18,9 +18,10 @@ fiber_data <- read_csv(here::here('data/Trial 1 All Fiber Data.csv'), col_types 
   mutate(units = 'um', 
          field = as.numeric(str_replace(field, 'Field ', '')), 
          fiber_type = ifelse(fiber_type == 'A', 'Crocidolite', 'Chrysotile'), 
-         fiber_density = ifelse(fiber_type == 'Crocidolite', 3.2, 2.4), 
+         fiber_density = ifelse(fiber_type == 'Crocidolite', 3.3, 2.5), 
          aed_henn = sqrt(fiber_density*log(2*aspect_ratio))*width, # Henn (1996) 
-         aed = 66*width*(aspect_ratio/(2 + 4*aspect_ratio))^2.2, # Timbrell (1965)
+         aed_stober = (9/(4*1.08^(3/2)))^(1/3) * aspect_ratio^(1/6) * width * (fiber_density/1), # Stober
+         aed_timbrell = 66*width*(aspect_ratio/(2 + 4*aspect_ratio))^2.2, # Timbrell (1965)
          aed_hinds = width * fiber_density^0.5
   ) %>%
   filter(!is.na(length)) %>% 

@@ -21,17 +21,22 @@ debris <- read_rds(here::here('data/processed/debris-data.rds'))
 
 Physical characteristics are expected to be log-normally distributed (Lee 2020). Geometric mean (GM, $\mu m$) and geometric standard deviation (GSD) for the key parameters are provided in the table below.
 
-Aerodynamic equivalent diameter (AED) was calculated using the equation provided in Timbrell (1965):
-
+Timbrell (1965) suggested the following, but it does not include density. 
 $$ AED = 66 d_f \left( \frac {\beta} {2 + 4\beta} \right)^{2.2} $$
 
-where $d_f$ is the fiber diameter and $\beta$ is the aspect ratio.
+Aerodynamic equivalent diameter (AED) was calculated using the equation provided in Stober (1972) given that the equation accounts for density, which may impact fiber transport:
+
+$$ AED = \left( \frac{9}{4k^{3/2}} \right)^{1/3} \sqrt{\frac{\rho}{\rho_0}} \beta^{1/6} d_f $$
+
+where $k$ is an empirical constant = 1.08 for asbestos, $l$ is fiber length, $p$ is fiber density , $d_f$ is fiber diameter and $\beta = l/d_f$ is aspect ratio.
 
 ```{r}
 gm <- function(x) { exp(mean(log(x))) }
 gsd <- function(x) { exp(sd(log(x[x>0]))) }
 
-fiber_data %>% 
+fiber_data <- fiber_data %>% 
+  mutate(aed = aed_stober)
+fiber_data |> 
   filter(width > 0) %>% 
   group_by(fiber_type) %>% 
   summarize(n = n(), 
@@ -99,28 +104,6 @@ p2 + p1 + plot_layout(guides = 'collect')
 ggsave(here::here('output/aspect-ratio-and-aed.jpg'))
 ```
 
-Note that, though AED is influenced by both aspect ratio and diameter, diameter has a much bigger impact. AED is almost perfectly correlated with diameter of the fiber.
-
-```{r warning=F, message=F}
-ggplot(fiber_data, aes(x = length, y = aed)) + 
-  facet_wrap(~ fiber_type) +
-  geom_point(aes(shape = fiber_type), alpha = 0.5) + 
-  scale_x_log10() +
-  scale_y_log10() + 
-  annotation_logticks(sides = 'bl') +
-  stat_smooth(method = 'loess') + 
-  theme_bw() 
-
-ggplot(fiber_data, aes(x = width, y = aed)) + 
-  facet_wrap(~ fiber_type) +
-  geom_point(aes(shape = fiber_type), alpha = 0.5) + 
-  scale_x_log10() +
-  scale_y_log10() + 
-  annotation_logticks(sides = 'bl') +
-  stat_smooth(method = 'loess') + 
-  theme_bw() 
-```
-
 ## Distribution of fibers
 
 In order to calculate fiber concentrations (fibers/cc \[f/cc\]), number of fibers per sampler need to be calculated using the following equation:
@@ -135,13 +118,14 @@ $$C_{fiber} = \frac{\Sigma_{fiber}} {\Sigma_{asbestos}} C_{asbestos}$$
 sum_na <- function(v) { 
   return(ifelse(all(is.na(v)), NA, sum(v, na.rm = T)))
 }
-fiber_smry <- fiber_data %>% 
-  group_by(chem_risk_id, distance_ft, fiber_type, direction, degrees, orientation) %>% 
+fiber_smry <- fiber_data %>%
+  # left_join(debris |> select(chem_risk_id, fiber_no, debris)) |> 
+  group_by(chem_risk_id, distance_ft, fiber_type, direction, degrees, orientation) %>%
   summarize(n = n(),
           length = gm(length), 
           width = gm(width), 
-          aspect_ratio = gm(aspect_ratio[!is.infinite(aspect_ratio)]), 
-          debris = sum_na(debris)/n
+          aspect_ratio = gm(aspect_ratio[!is.infinite(aspect_ratio)]),
+          # debris = sum_na(debris)/n
           # debris = case_when(debris != 0 ~ debris), 
           ) %>% 
   arrange(distance_ft, degrees)
@@ -270,6 +254,16 @@ ggplot(fiber_conc2, aes(x = distance_ft, y = fiber_cc, shape = fiber_type, linet
   geom_point(size = 2.5) + 
   # facet_wrap(~ fiber_type) +
   stat_smooth(method = 'lm', se = F, color = 'black', size = 0.8) +
+  annotate("text", x = 35, y = 2, label = "ln(y) = 1.74 - 0.044x\nR²=0.77",
+           hjust = 0, size = 4.2, parse = FALSE) +
+  annotate("text", x = 65, y = 0.02, label = "ln(y) = -0.305 - 0.049x\nR²=0.84",
+           hjust = 1, size = 4.2, parse = FALSE) +
+  # ggpmisc::stat_poly_eq(
+  #   aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+  #   formula = y ~ x,
+  #   parse = TRUE,
+  #   label.x.npc = "right", label.y.npc = c(0.9, 0.8)
+  # ) +
   labs(x = 'Distance (ft)', y = 'Fiber concentration (f/cc), log scale') +
   scale_x_continuous(limits = c(0, 100)) + 
   scale_y_log10() +
@@ -303,33 +297,54 @@ fiber_conc2 %>%
 Nearly a perfect correlation in fact. The greater the AED the greater the concentrations. In other words, particles with greater AED travel less distance and therefore deposit out of air more quickly. This also means that fiber diameter has a greater impact on fiber transport than fiber length.
 
 ```{r}
-p1 = ggplot(fiber_conc2, aes(x = distance_ft, y = aed, shape = fiber_type, linetype = fiber_type)) + 
+p1 <- ggplot(fiber_conc2, aes(x = distance_ft, y = aed, shape = fiber_type, linetype = fiber_type)) + 
   geom_point(size = 2.5) + 
   stat_smooth(method = 'lm', se = F, color = 'black', size = 0.8) +
-  scale_y_log10() +
-  labs(x = 'Distance (ft)', y = 'AED (um), log scale') +
+  scale_y_log10() + 
+  labs(x = 'Distance (ft)', y = 'AED (µm), log scale') +
   annotation_logticks(sides = 'l') +
   scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
   scale_linetype_discrete(name = 'Fiber type') + 
+  annotate("text", x = 32, y = 1,
+           label = "ln(AED) = 0.92 - 0.039x\nR² = 0.71",
+           hjust = 0, size = 3) +
+  annotate("text", x = 5, y = 0.02,
+           label = "ln(AED) = -0.32 - 0.046x\nR² = 0.83",
+           hjust = 0, size = 3) +
   theme_bw() +
   theme(text = element_text(size = 12.5))
 
 
-p2 = ggplot(fiber_conc2, aes(x = distance_ft, y = length, shape = fiber_type, linetype = fiber_type)) +   
+p2 <- ggplot(fiber_conc2, aes(x = distance_ft, y = length, shape = fiber_type, linetype = fiber_type)) +   
   geom_point(size = 2.5) + 
   stat_smooth(method = 'lm', se = F, color = 'black', size = 0.8) +
   scale_y_log10() +
-  labs(x = 'Distance (ft)', y = 'Length (um), log scale') +
+  labs(x = 'Distance (ft)', y = 'Length (µm), log scale') +
   annotation_logticks(sides = 'l') +
   scale_shape_manual(name = 'Fiber type', values = c(19, 1)) + 
   scale_linetype_discrete(name = 'Fiber type') + 
+  annotate("text", x = 5, y = 11,
+           label = "ln(Length) = 2.31 + 0.00081x\nR² = 0.07",
+           hjust = 0, size = 3) +
+  annotate("text", x = 20, y = 9.5,
+           label = "ln(Length) = 2.32 + 0.00043x\nR² = 0.01",
+           hjust = 0, size = 3) +
   theme_bw() +
   theme(text = element_text(size = 12.5))
 
 p1 + p2 + plot_layout(guides = 'collect')
-ggsave(here::here('output/aed-vs-distance and length-vs-distance.jpg'))
+ggsave(here::here('output/aed-vs-distance and length-vs-distance.jpg'), width = 8, height = 6)
 
 ```
+
+```{r}
+aed_croc_mod <- lm(log(aed) ~ distance_ft, fiber_conc2 %>% filter(fiber_type == 'Crocidolite'))
+aed_chrys_mod <- lm(log(aed) ~ distance_ft, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
+length_croc_mod <- lm(log(length) ~ distance_ft, fiber_conc2 %>% filter(fiber_type == 'Crocidolite'))
+length_chrys_mod <- lm(log(length) ~ distance_ft, fiber_conc2 %>% filter(fiber_type == 'Chrysotile'))
+summary(aed_croc_mod); summary(aed_chrys_mod); summary(length_croc_mod); summary(length_chrys_mod)
+```
+
 
 ```{r}
 with(fiber_conc2, cor.test(log(aed), distance_ft))
@@ -386,29 +401,61 @@ debris_conc
 debris_conc2 <- debris_conc |> 
   filter(direction %in% plume_window) 
 
-debris_conc2 |> 
-  mutate(debris = factor(debris, levels = c(TRUE, FALSE))) |>  # Flip factor order
+plot_data <- debris_conc2 |> 
+  mutate(debris = factor(debris, levels = c(TRUE, FALSE)))   # Flip factor order
+
+p1 <- plot_data |> filter(fiber_type == 'Chrysotile') |> 
   ggplot(aes(x = distance_ft, y = fiber_cc, shape = debris, linetype = debris)) + 
-  facet_wrap(~fiber_type) + 
   geom_point(size = 2.5) +
   scale_y_log10() + 
   annotation_logticks(sides = 'l') + 
   stat_smooth(method = 'lm', se = FALSE, color = 'black', size = 0.8) +
-  theme_bw() +
-  labs(x = "Distance (ft)", y = "Fiber concentration (f/cc), log scale") +
+  annotate("text", x = 35, y = 1.5, hjust = 0,
+         label = "ln(y) = 1.0 - 0.032x\nR² = 0.63",
+         size = 3.5) +
+  annotate("text", x = 25, y = 0.03, hjust = 0,
+           label = "ln(y) = -1.2 - 0.026x\nR² = 0.44",
+           size = 3.5) + 
+  theme_bw(base_size = 12.5) +
+  labs(x = "Distance (ft)", y = "Chrysotile concentration (f/cc), log scale") +
   scale_shape_manual(name = 'Bound debris', values = c(`TRUE` = 17, `FALSE` = 5)) +
-  scale_linetype_manual(name = 'Bound debris', values = c(`TRUE` = "solid", `FALSE` = "dashed")) +
-  theme(text = element_text(size = 12.5))
-ggsave(here::here('output/deposition-rates-by-debris-binding.jpg'))
+  scale_linetype_manual(name = 'Bound debris', values = c(`TRUE` = "solid", `FALSE` = "dashed"))
+  
+  
+
+p2 <- plot_data |> filter(fiber_type == 'Crocidolite') |> 
+  ggplot(aes(x = distance_ft, y = fiber_cc, shape = debris, linetype = debris)) + 
+  geom_point(size = 2.5) +
+  scale_y_log10() + 
+  annotation_logticks(sides = 'l') + 
+  stat_smooth(method = 'lm', se = FALSE, color = 'black', size = 0.8) +
+  annotate("text", x = 40, y = 0.1, hjust = 0,
+           label = "ln(y) = -0.74 - 0.053x\nR² = 0.78",
+           size = 3.5) +
+  annotate("text", x = 10, y = 0.01, hjust = 0,
+           label = "ln(y) = -1.32 - 0.045x\nR² = 0.84",
+           size = 3.5) +
+  theme_bw(base_size = 12.5) +
+  labs(x = "Distance (ft)", y = "Crocidolite concentration (f/cc), log scale") +
+  scale_shape_manual(name = 'Bound debris', values = c(`TRUE` = 17, `FALSE` = 5)) +
+  scale_linetype_manual(name = 'Bound debris', values = c(`TRUE` = "solid", `FALSE` = "dashed"))
+
+p1 + p2 + plot_layout(guides = 'collect')
+
+ggsave(here::here('output/deposition-rates-by-debris-binding.jpg'), width = 8, height = 6)
 ```
 
 ```{r}
-debris_mod <- lm(log(fiber_cc) ~ distance_ft + debris + fiber_type, data = debris_conc2)
-summary(debris_mod)
+m1 <- lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(debris, fiber_type == 'Chrysotile'))
+m2 <- lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(!debris, fiber_type == 'Chrysotile'))
+m3 <- lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(debris, fiber_type == 'Crocidolite'))
+m4 <- lm(log(fiber_cc) ~ distance_ft, data = debris_conc2 |> filter(!debris, fiber_type == 'Crocidolite'))
+summary(m1); summary(m2); summary(m3); summary(m4)
 ```
 ```{r}
-debris_interaction_mod <- lm(log(fiber_cc) ~ distance_ft * debris * fiber_type, data = debris_conc2)
-summary(debris_interaction_mod)
+m1 <- lm(log(fiber_cc) ~ distance_ft + debris + fiber_type, data = debris_conc2)
+m2 <- lm(log(fiber_cc) ~ distance_ft*debris + distance_ft*fiber_type, data = debris_conc2)
+anova(m1, m2)
 ```
 
 ```{r}
