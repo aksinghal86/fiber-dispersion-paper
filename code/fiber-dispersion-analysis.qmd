@@ -202,30 +202,30 @@ fiber_conc %>% ungroup() %>% add_row(distance_ft = 0, degrees = 0, fiber_cc = 0,
   coord_polar(theta = 'y', start = -1.57, direction = -1) + 
   geom_point(alpha = 0.8) + 
   facet_wrap(~ fiber_type) + 
-  labs(x = 'Distance (ft)') +
-  scale_shape_manual(values = c(19, 1)) +
+  labs(x = 'Distance (ft)', size = 'Fiber concentration\n(f/cc)') +
+  scale_shape_manual(values = c(19, 1), guide = 'none') +
   scale_size_continuous(range = c(1, 12)) + 
   scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) + 
   scale_y_continuous(limits = c(0, 360), breaks = seq(0, 360, by = 45)) + 
   theme_bw() + 
-  theme(legend.position = "none",
+  theme(
         text = element_text(size = 12), 
         axis.title.x = element_blank())
-ggsave(here::here('output/fiber-transport-polar.jpg'))
+ggsave(here::here('output/fiber-transport-polar.jpg'), height=, width=8)
 ```
 
 ```{r}
 ggplot(fiber_conc, aes(x = distance_ft, y = fiber_cc, shape = fiber_type, linetype = fiber_type)) + 
   facet_wrap(~ reorder(direction, degrees)) + 
-  geom_point(aes(size = fiber_cc)) + 
+  geom_point() + 
   geom_line(size = 1) + 
   scale_shape_manual(values = c(19, 1)) + 
-  labs(x = 'Distance (ft)', y = 'Concentrations (f/cc)') + 
+  labs(x = 'Distance (ft)', y = 'Concentrations (f/cc)', ) + 
   theme_bw() +    
-  scale_size_continuous(guide = 'none') + 
+  scale_size_continuous() + 
   theme(legend.title = element_blank(), 
         text = element_text(size = 12.5))
-ggsave(here::here('output/deposition-cartesian.jpg'))
+ggsave(here::here('output/deposition-cartesian.jpg'), height=5, width=8)
 ```
 
 ## Fiber deposition rates
